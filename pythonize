@@ -1,0 +1,484 @@
+#!/usr/bin/env bash
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Name:     pythonize
+# Source:   github.com/
+# Author:   prince@princebot.com
+# Usage:    pythonize [--python-version VERSION] [--miniconda]
+#                     [--packages CONDA-PACKAGE [CONDA-PACKAGE...]]
+# Synopsis: Download, install, and configure Python in one line.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+set -o pipefail
+shopt -s extglob
+declare -r PROG="pythonize"
+
+# If the terminal believes it supports colors, use them.
+COLORS_SUPPORTED=
+if which tput >/dev/null; then
+    if [[ -n $(tput colors) ]] && (($(tput colors) >= 8)); then
+        declare -r COLORS_SUPPORTED=true
+    fi
+fi 2>/dev/null
+if [[ -n ${COLORS_SUPPORTED} ]]; then
+    # Colors
+    declare -r BLACK=$(tput setaf 0)
+    declare -r RED=$(tput setaf 1)
+    declare -r GREEN=$(tput setaf 2)
+    declare -r YELLOW=$(tput setaf 3)
+    declare -r BLUE=$(tput setaf 4)
+    declare -r MAGENTA=$(tput setaf 5)
+    declare -r CYAN=$(tput setaf 6)
+    declare -r WHITE=$(tput setaf 7)
+    # Styles
+    declare -r BOLD=$(tput bold)
+    declare -r UL=$(tput smul)
+    declare -r STOP_UL=$(tput rmul)
+    declare -r CMD=$(tput setaf 7)$(tput smul)
+    declare -r RESET=$(tput sgr0)
+    # Cursor movement
+    tput cuu1 &>/dev/null && declare -r UP_1_ROW=$(tput cuu1)
+    tput cr &>/dev/null &&   declare -r TO_COL_0=$(tput cr)
+    tput el &>/dev/null &&   declare -r CLR_TO_END=$(tput el)
+else
+    # Defensively clear these variables if colors are not supported, on the off
+    # chance these have exported values.
+    BLACK=
+    RED=
+    GREEN=
+    YELLOW=
+    BLUE=
+    MAGENTA=
+    CYAN=
+    WHITE=
+    BOLD=
+    UL=
+    STOP_UL=
+    CMD=
+    RESET=
+    UP_1_ROW=
+    TO_COL_0=
+    CLR_TO_END=
+fi
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#  Functions:
+#      1. main
+#      2. show_help
+#      3. die
+#      4. say
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Parse command-line arguments and install Anaconda.
+# Globals:   Color-escape constants
+# Arguments: Command-line args
+# Functions: die
+#            say
+#            show_help
+# Returns:   None
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+main() {
+    local get_mini
+    local py_version
+    local -a packages
+    while (($# > 0)); do
+        case $1 in
+            help|-h|-help|--help)
+                show_help
+                ;;
+            -m|--miniconda)
+                get_mini=true
+                shift
+                ;;
+            -v|--python-version)
+                # Check if specified Python version is 2.6 - 2.7 or 3.3 - 3.5
+                # This will need to be changed when Anaconda increments its
+                # supported versions.
+                if [[ $2 =~ ^(2(\.[6-7])?|3(\.[3-5])?)$ ]]; then
+                    py_version=$2
+                    shift 2
+                elif [[ $2 =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                    die "Unsupported Python version \"$2\""
+                else
+                    say "No argument for $1 option, skipping"
+                    shift
+                fi
+                ;;
+            -p|--package?(s))
+                shift
+                while (($# > 0)) && [[ -n $1 && ! $1 =~ ^--[A-Za-z]+ ]]; do
+                    packages+=($1)
+                    shift
+                done
+                ;;
+            *) die "Unparsable option \"$1\"" ;;
+        esac
+    done
+    say -a 1 -b 1 "\nStarting operations ...\n "
+    if which conda &>/dev/null || [[ -d ~/anaconda || -d ~/miniconda ]]; then
+        die "Anaconda is already installed. Remove existing installation by" \
+            "deleting ~/anaconda and/or ~/miniconda before trying again."
+    fi
+    local arch
+    [[ $(uname -m) =~ 32 ]] && arch="x86" || arch="x86_64"
+    local name
+    [[ ${get_mini} ]] && name="Miniconda" || name="Anaconda"
+    [[ ${py_version} =~ ^3 ]] && name+=3
+    local fname=downloaded_installer.sh
+    local download_cmd
+    if which curl &>/dev/null; then
+        get_url="curl -s"
+        download="curl -o ${fname}"
+    elif which wget &>/dev/null; then
+        get_url="wget --silent -O -"
+        download="wget --silent --show-progress -O ${fname}"
+    else
+        die "Unable to find either curl or wget for downloading ${name}"
+    fi
+    local os_type
+    [[ $(uname -s) =~ [Dd]arwin ]] && os_type=MacOSX || os_type=Linux
+    local url
+    trap "rm -f -- \"${fname}\"; trap - EXIT" EXIT
+    if [[ ${get_mini} ]]; then
+        url=$(${get_url} http://conda.pydata.org/miniconda.html \
+              | grep -Eiom 1 "https?://.*${name}.*${os_type}.*${arch}\.sh")
+    else
+        url=$(${get_url} http://continuum.io/downloads \
+              | grep -Eiom 1 "https?://.*${name}.*${os_type}.*${arch}\.sh")
+    fi
+    if ! ${download} "${url}"; then
+        die "Failed to download ${name} installer"
+    fi
+    say -a 1 -b 1 "\nLaunching ${name} installer.\n "
+    chmod +x "${fname}"
+    ./${fname} -b
+    local f
+    local skip
+    local startup
+    local d=$(echo -n "${name}" | tr A-Z a-z)
+    # Add Anaconda or Miniconda to the PATH in a shell startup file only if has
+    # not already neen appended.
+    for f in ~/.bash_profile ~/.bashrc ~/.bash_profile ~/.bash_login \
+             ~/.profile
+    do
+        if [[ -r $f ]]; then
+            if grep -Eq 'PATH=.*(~|\{?HOME\}?)/'"${d}" "$f"; then
+                skip=true
+                startup=$f
+                break
+            fi
+        fi
+    done
+    while [[ -z ${skip} ]]; do
+        for f in ~/.bash_profile ~/.bashrc ~/.bash_profile ~/.bash_login \
+                 ~/.profile
+        do
+            if [[ -w $f ]]; then
+                startup=$f
+                break
+            fi
+        done
+        if [[ -z ${startup} ]]; then
+            say "Unable to find a recognizable startup file. To add the" \
+                "path manually, put this in your shell startup:\n\texport" \
+                "PATH=\"\${HOME}/${d}/bin:\${PATH}\""
+            break
+        fi
+        echo -e "\n# Added by anaconda installer" \
+                "\nexport PATH=\"\${HOME}/${d}/bin:\${PATH}\"" \
+                >> "${startup}"
+        break
+    done
+    export PATH="${HOME}/${d}/bin:${PATH}"
+    if ! which conda &>/dev/null; then
+        die "Problem finding conda after installation."
+    fi
+    # Root Anaconda environment is always the latest 2.x or 3.x version, so
+    # if the user specifies another Python version, we need to create a new
+    # environment after installation and set it as the default.
+    if [[ -n ${py_version} && ! ${py_version} =~ ^(2(\.7)?|3(\.5)?)$ ]]; then
+        say -a 1 -b 1 "\nCreating default environment using Python" \
+                      "${py_version}\n "
+        if [[ $d == anaconda ]]; then
+            conda create -y -n default python=${py_version} $d
+        else
+            conda create -y -n default python=${py_version}
+        fi
+        local path='\/'"${d}"'\/envs\/default\/bin:'
+        if [[ -n ${startup} && -w ${startup} ]]; then
+            perl -i -pe \
+                's/(.*?PATH.*?)(\/'"${d}"'\/.*?bin:?)(.*)/\1'"${path}"'\3/' \
+                "${startup}"
+            export PATH="${HOME}/${d}/envs/default/bin:${PATH}"
+        fi
+        source activate default
+    fi
+    [[ $d == anaconda ]] && conda install -y anaconda-client
+    (( ${packages[@]} )) && conda install -y "${packages[@]}"
+    conda update -y --all
+    say -a 1 -b 2 "\nAnaconda Python has been downloaded and configured." \
+                  "Start a fresh shell session to begin using it.\n "
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Display man page.
+# Globals:   INLINE_MAN_PAGE
+# Arguments: None
+# Returns:   None
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+show_help() {
+    mkdir -p ~/tmp
+    local manpage=~/tmp/pythonize.manpage.1
+    cat <<<"${INLINE_MAN_PAGE}" > "${manpage}"
+    if [[ ! -f ${manpage} ]]; then
+        die "Unable to find man page at ${manpage}"
+    fi
+    exec man "${manpage}"
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Print formatted error messages and quit with exit code 1.
+# Globals:   Color-escape constants.
+# Arguments: Message string.
+# Returns:   1
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+die() {
+    # Rather than add external dependencies, we try to prettyprint messages
+    # using shell utilties common to both BSD- and GNU-flavored *nix. We first
+    # calculate the size of the columns we need; then, we shove everything
+    # through echo+fold+paste to align it all while keeping the lines lengths
+    # to under 79 characters.
+    local header=" >   ${BOLD}${PROG}: Error:${RESET}${RED}"
+    local char_ct=$(wc -m <(echo -n "${header}") | awk '{printf $1}')
+    local inv_char_ct=$(wc -m <(echo -n "${BOLD}${RESET}${RED}") \
+                        | awk '{printf $1}')
+    char_ct=$(( (char_ct - inv_char_ct) - 1 ))
+    char_ct=$(( (char_ct / 7) - 1 ))
+    local filler="${RESET}${RED} >"
+    local i
+    for ((i=0; i < char_ct && char_ct >= 0; i++)); do
+        filler+=$'\t'
+    done
+    local line_ct
+    line_ct=$(wc -l <(fold -s -w 48 <(echo -en "$@")) | awk '{printf $1}')
+    header+=$'\n'
+    for ((i=0; i < line_ct && line_ct >= 0; i++)); do
+        header+=${filler}$'\n'
+    done
+    header=${header%$'\n'}
+    local msg=$(paste <(echo -n "${header}") \
+                      <(fold -s -w 48 <(echo -en "$@")))
+    echo -e "\n${RED}${msg}${RESET}\n " >&2
+    exit 1
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Print formatted general messages.
+# Globals:   Color-escape constants.
+# Arguments: Message string.
+# Options:   -a N   Print N trailing newlines.
+#            -b N   Print N leading newlines.
+#            -n     End without a newline --- next text will be on same line.
+# Returns:   None.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+say() {
+    local i
+    local nl_after
+    local nl_before
+    local no_final_nl
+    while (($# > 0)); do
+        case $1 in
+            -n)
+                no_final_nl=true
+                shift
+                ;;
+            -@(a|b))
+                [[ $2 =~ ^[0-9]+$ ]] || continue
+                for ((i=0; i < $2 && $2 >= 0; i++)); do
+                    case $1 in
+                        -a) nl_after+=$'\n'  ;;
+                        -b) nl_before+=$'\n' ;;
+                    esac
+                done
+                shift 2
+                ;;
+            *) break ;;
+        esac
+    done
+    # The comments at the top of die() apply here as well.
+    local msg=$(fold -s -w 72 <(echo -e "$@"))
+    local line_ct=$(wc -l <(echo "${msg}") | awk '{print $1}')
+    local filler
+    for ((i=0; i < line_ct && line_ct >= 0; i++)); do
+        filler+="${RESET}${WHITE} >  ${GREEN}\n"
+    done
+    filler=${filler%\\n}
+    msg=$(paste -d ' ' <(echo -e "${filler}") <(echo "${msg}"))
+    if [[ ${no_final_nl} ]]; then
+        echo -n "${nl_before}${msg}${RESET}"
+    else
+        echo "${nl_before}${msg}${nl_after}${RESET}"
+    fi
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Man page.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+INLINE_MAN_PAGE=$(cat <<EOF_MAN_PAGE
+.\"
+.\" MAN PAGE COMMENTS to
+.\"
+.\" Prince Williams
+.\" prince@princebot.com
+.\" https://github.com/princebot/pythonize
+.\"
+.\" Last Change: Sun Sep 20
+.\"
+.mso www.tmac
+.TH PYTHONIZE 1 "2015-09-20" "github.com/princebot/pythonize" \
+    "User Commands"
+.SH NAME
+pythonize \- download, install, and configure Python in one line
+.SH SYNOPSIS
+.ad l
+.nh
+.TP 10
+.B pythonize
+.RB [ --python-version
+.IR VERSION ]
+.RB [ --miniconda ]
+.br
+.RB [ --packages
+.IR PACKAGE " [" PACKAGE ...]]
+.SH DESCRIPTION
+.ad n
+.hy 14
+.B pythonize
+wraps the installation process for the
+.B Anaconda Python distribution
+and its environment/package manager
+.BR conda ,
+providing you in a single command line with a ready-to-use Python preloaded
+with any needed packages.
+.P
+When run without options,
+.B pythonize
+performs these default actions:
+.sp
+.RS
+.PD 0
+.TP 3
+\[->]
+downloads latest Anaconda Python for current machine\[cq]s architecture,
+.TP
+\[->]
+installs it noninteractively using Anaconda defaults,
+.TP
+\[->]
+invokes conda to update all Python packages, and
+.TP
+\[->]
+adds
+.IR ~/anaconda/bin " or " ~/miniconda/bin
+to your PATH.
+.RE
+.PD
+.P
+Anaconda Python comes bundled with 100+ useful Python packages. For a leaner
+installation (10x smaller) including only the conda
+utility and Python,
+.B pythonize
+supports installing
+.B miniconda
+rather than Anaconda using the
+.B --miniconda
+option (see
+.B OPTIONS
+below).
+.SH OPTIONS
+.TP 7
+.BR -h ", " --help
+Display this man page.
+.TP
+.BR -m ", " --miniconda
+Download and install lightweight
+.B Miniconda
+(10x smaller) rather than Anaconda. Miniconda includes only conda and Python,
+leaving installation of other packages via conda up to you.
+.TP
+.BR -p ", " --packages " [" \fIPACKAGE " [" \fIPACKAGE ...]]
+Install these Python packages in addition to the defaults,
+e.g.,
+.RS +11
+.P
+.B pythonize --packages requests boto3
+.RE
+.TP
+.BR -v ", " --python-version " \fIVERSION"
+Use this Python instead of 2.7 for the default environment.
+.SH FILES
+~/.bash_profile
+.br
+~/.bashrc
+.br
+~/.bash_login
+.PD 0
+.TP
+~/.profile
+.B pythonize
+adds
+.IR ~/anaconda/bin " or " ~/miniconda/bin
+to PATH in the first writable file on this list.
+.PD
+.P
+~/.anaconda
+.PD 0
+.TP
+~/.miniconda
+Installation directory for Anaconda or Miniconda.
+.PD
+.SH EXAMPLES
+Default installation without options:
+.P
+.RS +4
+.B pythonize
+.RE
+.P
+Install latest version of Python 3:
+.P
+.RS +4
+.B pythonize --python-version 3
+.RE
+.P
+Install a specific Python 3 release, and add the requests and boto3 libraries into the default environment post-installation.
+.P
+.RS +4
+.B pythonize --python-version 3.5 --packages requests boto3
+.RE
+.SH SEE ALSO
+.PD 0
+.TP 18
+.B conda
+.URL http://conda.pydata.org/docs
+.TP
+.B Anaconda Python
+.URL https://store.continuum.io/cshop/anaconda
+.TP
+.B pythonize
+.URL http://github.com/princebot/pythonize
+.PD
+EOF_MAN_PAGE
+)
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Begin execution.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+main "$@"
