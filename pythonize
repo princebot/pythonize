@@ -126,7 +126,8 @@ main() {
     [[ ${get_mini} ]] && name="Miniconda" || name="Anaconda"
     [[ ${py_version} =~ ^3 ]] && name+=3
     local fname=downloaded_installer.sh
-    local download_cmd
+    local get_url
+    local download
     if which curl &>/dev/null; then
         get_url="curl -s"
         download="curl -o ${fname}"
