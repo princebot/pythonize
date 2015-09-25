@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Name:     wrapper_template
+# Source:   github.com/princebot/pythonize
+# Author:   prince@princebot.com
+# Synopsis: Shell wrapper around a Python programs to guaranteee the required
+#           Python version and Python packages are available.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Details:  Pip and the packaging formats it supports do well for satisfying
+#           Python library dependencies --- but not the dependency of Python
+#           itself.
+#
+#           Using this wrapper template, you can write Python programs that
+#           abstract any Python version/library dependencies from the user.
+#
+#           Let' say a user git-clones or otherwise downloads your software
+#           package named AWESOME-PROG. He launches the main executable ---
+#           AWESOME-PROG --- and from his perspective, it just runs.
+#
+#           Internally, however, AWESOME-PROG is actually this shell script,
+#           which verifies that the required Python version libraries exist in
+#           the current environment and, if so, replaces itself with target
+#           Python program via exec, passing along any existing command-line
+#           arguments to it.
+#
+#           If verification fails, this wrapper instead asks the user for
+#           permission to install the required Python version/libraries and
+#           calls pythonize to create the right Python environment. If this
+#           succeeds, the wrapper then execs your Python program.
+#
+#           Using this shell wrapper, you can release Python utilities without
+#           worrying about accommodating all possible versions of Python a user
+#           may have installed --- or in fact worrying if he has Python at all.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+# Customize the next four variables for the Python program that this wraps:
+#
+#      PROG:         Set by default to use the wrapper script's filename in
+#                    error messages. Change this if you want a different name.
+#      WRAPPED_PROG: Filepath of the Python program this script wraps. By
+#                    default, the wrapper expects its Python program to be in
+#                    <WRAPPER-SCRIPT-DIRECTORY>/.internal/<THIS-FILENAME>.py.
+#                    Change it if your utility is packaged differently.
+#      PY_VERSION:   The required Python version for the wrapped Python script,
+#                    e.g., 2.7. (Using just 2 or 3 without specifying a minor
+#                    version number will match any Python 2.x or 3.x.)
+#      PY_PACKAGES:  Bash array of any Python packages outside the standard
+#                    library that the wrapped Python script requires, e.g.,
+#                    PY_PACKAGES=(requests boto3 flask), or PY_PACKAGES=() if
+#                    there are no package dependencies outside the Python
+#                    Standard Library.
+
+PROG=$(basename "${BASH_SOURCE}")
+WRAPPED_PROG=$(dirname "${BASH_SOURCE}")/.internal/${PROG}.py
+PY_VERSION=3
+PY_PACKAGES=(colorama requests)
+
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#
+# All lines below are implementation details and should not require editing.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+set -o pipefail
+shopt -s extglob
+
+# If the terminal believes it supports colors, use them.
+COLORS_SUPPORTED=
+if which tput >/dev/null; then
+    if [[ -n $(tput colors) ]] && (($(tput colors) >= 8)); then
+        declare -r COLORS_SUPPORTED=true
+    fi
+fi 2>/dev/null
+if [[ -n ${COLORS_SUPPORTED} ]]; then
+    # Colors
+    declare -r BLACK=$(tput setaf 0)
+    declare -r RED=$(tput setaf 1)
+    declare -r GREEN=$(tput setaf 2)
+    declare -r YELLOW=$(tput setaf 3)
+    declare -r BLUE=$(tput setaf 4)
+    declare -r MAGENTA=$(tput setaf 5)
+    declare -r CYAN=$(tput setaf 6)
+    declare -r WHITE=$(tput setaf 7)
+    # Styles
+    declare -r BOLD=$(tput bold)
+    declare -r UL=$(tput smul)
+    declare -r STOP_UL=$(tput rmul)
+    declare -r CMD=$(tput setaf 7)$(tput smul)
+    declare -r RESET=$(tput sgr0)
+    # Cursor movement
+    tput cuu1 &>/dev/null && declare -r UP_1_ROW=$(tput cuu1)
+    tput cr &>/dev/null &&   declare -r TO_COL_0=$(tput cr)
+    tput el &>/dev/null &&   declare -r CLR_TO_END=$(tput el)
+else
+    # Defensively clear these variables if colors are not supported, on the off
+    # chance these have exported values.
+    BLACK=
+    RED=
+    GREEN=
+    YELLOW=
+    BLUE=
+    MAGENTA=
+    CYAN=
+    WHITE=
+    BOLD=
+    UL=
+    STOP_UL=
+    CMD=
+    RESET=
+    UP_1_ROW=
+    TO_COL_0=
+    CLR_TO_END=
+fi
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Private functions:
+#      1. __main
+#      2. __die
+#      3. __format_python_deps
+#      4. __run_wrapped_prog
+#      5. __say
+#      6. __verify_python_deps
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Execute wrapper script functions and pass command-line arguments
+#            through to target Python program.
+# Globals:   Color-escape constants
+#            PROG
+#            WRAPPED_PROG
+#            PY_VERSION
+#            PY_PACKAGES
+# Arguments: Command-line args
+# Functions: __die
+#            __format_python_deps
+#            __run_wrapped_prog
+#            __say
+#            __verify_python_deps
+# Returns:   None
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__main() {
+    # If we have the right Python version/libraries in the current Python or in
+    # any installed Anaconda Python environments, run our Python program.
+    if __verify_python_deps; then
+        __run_wrapped_prog "$@"
+    fi
+    # If we can't resolve dependencies using existing Python environments, try
+    # running pythonize to get what we need.
+    local __pythonize
+    # If this software package's .pythonize/ directory has a pythonize program,
+    # use it.
+    if [[ -f ${WRAPPED_PROG%/*}/.internal/pythonize ]]; then
+        __pythonize=${WRAPPED_PROG%/*}/.internal/pythonize
+    # If there's a pythonize available from PATH, use it.
+    elif which pythonize &>/dev/null; then
+        __pythonize=$(which pythonize)
+    # If there's a pythonize in the current directory, use it.
+    elif [[ -f pythonize ]]; then
+        __pythonize="./pythonize"
+    fi
+    local deps=$(__format_python_deps)
+    # If we couldn't find pythonize, exit with an error.
+    if [[ -z ${__pythonize} ]]; then
+        __die "Could find neither ${deps} nor a pythonize script to" \
+              "automatically install them. Rerun ${PROG} after installing" \
+              "the required Python version and libraries."
+    fi
+    # Ask user for permission to install Python dependencies with pythonize.
+    __say -n -b 1 "${PROG} requires ${deps}. \n\n${PROG} can attempt to" \
+                  "install the dependencies into a local virtual Python" \
+                  "environment using ${BOLD}pythonize${RESET}${GREEN}." \
+                  "\n\npythonize will affect only the current shell; no" \
+                  "system or user settings will be changed." \
+                  "\n\nUse pythonize to satisfy dependencies? (y/n) "
+    local resp
+    while read -r resp; do
+        [[ ${resp} =~ ^(y|yes|n|no)$ ]] && break
+        __say -b 1 "Please enter 'y' or 'n'"
+    done
+    if [[ ${resp} =~ ^n ]]; then
+        __say -a 1 -b 1 "Quitting at user request. Rerun ${PROG} after" \
+                        "installing the required Python version and" \
+                        "libraries."
+        exit
+    fi
+    if ! "${__pythonize}" --miniconda --python-version "${PY_VERSION}" \
+                          --packages "${PY_PACKAGES[@]}" --wrapper "${PROG}"
+    then
+        __die "Failed to automatically install ${deps} using pythonize." \
+              "Rerun ${PROG} after installing the required Python version" \
+              "and libraries."
+    fi
+    # Check if we now have an Anaconda Python environment that satisfies our
+    # Python dependencies. If we do, run the wrapped Python program.
+    if __verify_python_deps; then
+        __say -a 1 -b 1 \
+            "\nSuccessfully installed the required Python dependencies with" \
+            "pythonize.\nLaunching main program ...\n "
+        __run_wrapped_prog "$@"
+    fi
+    __die "Could not find a Python environment with the required" \
+          "dependencies after running pythonize. Rerun ${PROG} after" \
+          "installing the required Python version and libraries: ${deps}"
+}
+
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Print formatted error messages and quit with exit code 1.
+# Globals:   Color-escape constants.
+# Arguments: Message string.
+# Returns:   1
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__die() {
+    # Rather than add external dependencies, we try to prettyprint messages
+    # using shell utilties common to both BSD- and GNU-flavored *nix. We first
+    # calculate the size of the columns we need; then, we shove everything
+    # through echo+fold+paste to align it all while keeping the lines lengths
+    # to under 79 characters.
+    local header=" >   ${BOLD}${PROG}: Error:${RESET}${RED}"
+    local char_ct=$(wc -m <(echo -n "${header}") | awk '{printf $1}')
+    local inv_char_ct=$(wc -m <(echo -n "${BOLD}${RESET}${RED}") \
+                        | awk '{printf $1}')
+    char_ct=$((char_ct - inv_char_ct))
+    local tab_ct
+    if (( (char_ct % 7) == 0 || char_ct <= 15 )); then
+        tab_ct=$(( (char_ct / 7) - 1 ))
+    else
+        tab_ct=$((char_ct / 7))
+    fi
+    local filler="${RESET}${RED} >"
+    local i
+    filler+=$'\t'
+    for ((i=1; i < tab_ct && tab_ct > 0; i++)); do
+        filler+=$'\t'
+    done
+    local line_ct
+    line_ct=$(wc -l <(fold -s -w 48 <(echo -en "$@")) | awk '{printf $1}')
+    header+=$'\n'
+    for ((i=0; i < line_ct && line_ct >= 0; i++)); do
+        header+=${filler}$'\n'
+    done
+    header=${header%$'\n'}
+    local msg=$(paste <(echo -n "${header}") \
+                      <(fold -s -w 48 <(echo -en "$@")))
+    echo -e "\n${RED}${msg}${RESET}\n " >&2
+    exit 1
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Return grammatical version of Python dependencies list.
+# Globals:   Color-escape constants.
+#            PY_VERSION
+#            PY_PACKAGES
+# Arguments: None
+# Returns:   Formatted message string.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__format_python_deps() {
+    # There's no defensible reason for doing this.  <.<
+    local msg="Python ${PY_VERSION}"
+    if ((${#PY_PACKAGES[@]} > 0)); then
+        msg+=" "
+        case ${#PY_PACKAGES[@]} in
+            1)
+                msg+="with ${PY_PACKAGES}"
+                ;;
+            2)
+                msg+="with ${PY_PACKAGES} and ${PY_PACKAGES[1]}"
+                ;;
+            *)
+                msg+="with "
+                local i
+                for ((i=0; i < ${#PY_PACKAGES[@]}; i++)); do
+                    if ((i == ${#PY_PACKAGES[@]} - 1)); then
+                        msg+="and ${PY_PACKAGES[i]}"
+                    else
+                        msg+="${PY_PACKAGES[i]}, "
+                    fi
+                done
+                ;;
+        esac
+    fi
+    echo "${msg}"
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Execute wrapped Python program.
+# Globals:   WRAPPED_PROG
+# Arguments: Command-line args
+# Returns:   None.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__run_wrapped_prog() {
+    # Clear the shell options we set in this wrapper.
+    set +o pipefail
+    shopt -u extglob
+    exec "${WRAPPED_PROG}" "$@"
+    # If exec finds the Python program, this shell process is replaced with
+    # a new Python process. If for any reason exec itself fails, however, we'll
+    # still be in this shell script --- so let's make sure we explicitly exit
+    # in that case rather than returning to __main().
+    exit
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Print formatted general messages.
+# Globals:   Color-escape constants.
+# Arguments: Message string.
+# Options:   -a N   Print N trailing newlines.
+#            -b N   Print N leading newlines.
+#            -n     End without a newline --- next text will be on same line.
+# Returns:   None.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__say() {
+    local i
+    local nl_after
+    local nl_before
+    local no_final_nl
+    while (($# > 0)); do
+        case $1 in
+            -n)
+                no_final_nl=true
+                shift
+                ;;
+            -@(a|b))
+                [[ $2 =~ ^[0-9]+$ ]] || continue
+                for ((i=0; i < $2 && $2 >= 0; i++)); do
+                    case $1 in
+                        -a) nl_after+=$'\n'  ;;
+                        -b) nl_before+=$'\n' ;;
+                    esac
+                done
+                shift 2
+                ;;
+            *) break ;;
+        esac
+    done
+    # The comments at the top of __die() apply here as well.
+    local msg=$(fold -s -w 72 <(echo -e "$@"))
+    local line_ct=$(wc -l <(echo "${msg}") | awk '{print $1}')
+    local filler
+    for ((i=0; i < line_ct && line_ct >= 0; i++)); do
+        filler+="${RESET}${WHITE} >  ${GREEN}\n"
+    done
+    filler=${filler%\\n}
+    msg=$(paste -d ' ' <(echo -e "${filler}") <(echo -e "${msg}"))
+    if [[ ${no_final_nl} ]]; then
+        echo -n "${nl_before}${msg}${RESET}"
+    else
+        echo "${nl_before}${msg}${nl_after}${RESET}"
+    fi
+}
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Check current environment for required Python version/libraries.
+# Globals:   PY_VERSION
+#            PY_PACKAGES
+# Arguments: None
+# Returns:   0 (Python dependencies met) or 1 (Python dependencies not met)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__verify_current_python_deps() {
+    local retval=1
+    which python &>/dev/null || return ${retval}
+    local curr_py_vers=$(
+        python -V \
+        |& grep --color=never -Eio 'Python [0-9]+(\.[0-9]+(\.[0-9]+)?)?' \
+        |  awk '{print $2}')
+    if [[ -n ${curr_py_vers} \
+          && ${curr_py_vers} =~ ^${PY_VERSION} ]]
+    then
+        ((${#PY_PACKAGES[@]} < 1)) && retval=0
+        while ((${#PY_PACKAGES[@]} > 0)); do
+            local module
+            for module in "${PY_PACKAGES[@]}"; do
+                python -c "import ${module}" &>/dev/null || break 2
+            done
+            retval=0
+            break
+        done
+    fi
+    return ${retval}
+}
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Check current Python and any installed Anaconda Pythons for
+#            required Python version/libraries.
+# Globals:   None
+# Arguments: None
+# Functions: __verify_current_python_deps
+# Returns:   0 (Python dependencies met) or 1 (Python dependencies not met)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__verify_python_deps() {
+    # First check the current Python. If it doesn't meet our needs, check any
+    # existing conda environments.
+    __verify_current_python_deps && return
+    local d
+    local e
+    local -a envs
+    for d in ~/{ana,mini}conda{,3}/bin; do
+        [[ -d ${d} ]] || continue
+        source "${d}/activate" root 2>/dev/null || continue
+        __verify_current_python_deps && return
+        envs=($(conda env list | awk '$0 && !/^#/ && $2 !~ /\*/ {print $1}'))
+        for e in "${envs[@]}"; do
+            source activate "$e" 2>/dev/null || continue
+            __verify_current_python_deps && return
+        done
+        source "${d}/activate" root 2>/dev/null
+    done
+    return 1
+}
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Begin execution.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+__main "$@"
