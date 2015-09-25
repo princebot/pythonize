@@ -190,7 +190,8 @@ pythonize::create_conda_environment() {
         pythonize::die "Internal Error: No argument for ${FUNCNAME}"
     fi
     local c_env=$1
-    local e=$(conda env list | awk '$2 ~ /\*/ && $3 ~'"${c_env}"' {printf $3}')
+    local e=$(conda env list \
+             | awk '$2 ~ /\*/ && $3 ~ /'"${c_env}"'/ {printf $3}')
     if [[ ${e} ]]; then
         source deactivate
         source "${e%/envs*}/bin/activate" root
