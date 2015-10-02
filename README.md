@@ -9,7 +9,7 @@
 ```
 pythonize [--python-version PYTHON-VERSION] [--miniconda]
           [--packages PYTHON-PACKAGE [PYTHON-PACKAGE...]]
-          [--wrapper PYTHON-PROGRAM]
+          [--wrapper APPLICATION-NAME]
 ```
 
 **Fetch and run in one line:**

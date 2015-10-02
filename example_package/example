@@ -211,8 +211,8 @@ __main() {
     local __pythonize
     # If this software package's .runtime/ directory has a pythonize program,
     # use it.
-    if [[ -f ${WRAPPED_PROG%/*}/.runtime/pythonize ]]; then
-        __pythonize=${WRAPPED_PROG%/*}/.runtime/pythonize
+    if [[ -f ${WRAPPED_PROG%/*}/pythonize ]]; then
+        __pythonize=${WRAPPED_PROG%/*}/pythonize
     # If there's a pythonize available from PATH, use it.
     elif which pythonize &>/dev/null; then
         __pythonize=$(which pythonize)
@@ -256,7 +256,7 @@ __main() {
     # Python dependencies. If we do, run the wrapped Python program.
     __verify_python_deps &
     __watch_pot
-    target_python=$(< "${tmp}")
+    load_python=$(< "${tmp}")
     if [[ ${load_python} ]]; then
         __say -a 1 -b 1 \
             "\nSuccessfully installed the required Python dependencies with" \

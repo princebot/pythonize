@@ -5,7 +5,7 @@
 # Author:   prince@princebot.com
 # Usage:    pythonize [--python-version PYTHON_VERSION] [--miniconda]
 #                     [--packages PYTHON_PACKAGE [PYTHON_PACKAGE...]]
-#                     [--wrapper PYTHON_PROGRAM]
+#                     [--wrapper APPLICATION-NAME]
 # Synopsis: Download, install, and configure Python in one line.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Details:  Use pythonize to install the Anaconda Python distribution, an
@@ -165,8 +165,6 @@ pythonize::main() {
             -w|--wrapper)
                 if [[ -z $2 || $2 =~ ^--.+ ]]; then
                     pythonize::die "Missing argument for --wrapper option."
-                elif [[ ! -f $2 ]]; then
-                    pythonize::die "Python program \"$2\" does not exist."
                 fi
                 opt_wrap=true
                 # In wrapper mode, always install Miniconda rather than
@@ -791,7 +789,7 @@ pythonize \- download, install, and configure Python in one line
 .IR PYTHON-PACKAGE " [" PYTHON-PACKAGE ...]]
 .br
 .RB [ --wrapper
-.IR PYTHON-PROGRAM ]
+.IR APPLICATION-NAME ]
 .SH DESCRIPTION
 .ad n
 .hy 14
@@ -921,12 +919,14 @@ argument is 2 or 3 without specifying a minor version number,
 .B pythonize
 downloads the latest 2.x or 3.x respectively.
 .TP
-.BR -w ", " --wrapper " \fIfile"
+.BR -w ", " --wrapper " \fIapplication-name"
 Run
 .B pythonize
-in wrapper mode, setting
-.I file
-as the Python program to be wrapped.
+in wrapper mode, using
+.I application-name
+as a suffix for the
+.I conda
+environment we\[cq]ll create if we need to make a new one.
 .sp
 Rather than invoking wrapper mode directly, it\[cq]s recommended in most cases to use the shell wrapper included with the
 .B pythonize
