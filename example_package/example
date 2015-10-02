@@ -1,69 +1,120 @@
 #!/usr/bin/env bash
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# Name:     wrapper_template
-# Source:   github.com/princebot/pythonize
-# Author:   prince@princebot.com
-# Synopsis: Shell wrapper around a Python programs to guaranteee the required
-#           Python version and Python packages are available.
+# Name:       example
+# Source:     github.com/princebot/pythonize
+# Author:     prince@princebot.com
+# Synopsis:   Shell wrapper around target Python program to guarantee Python
+#             version/library dependencies are met.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# Details:  Pip and the packaging formats it supports do well for satisfying
-#           Python library dependencies --- but not the dependency of Python
-#           itself.
+# Quickstart:    - Change name of example_package to your package.
 #
-#           Using this wrapper template, you can write Python programs that
-#           abstract any Python version/library dependencies from the user.
+#                - Change name of this file to whatever filename you want as
+#                  your main executable (for example, "do_awesome_stuff").
 #
-#           Let' say a user git-clones or otherwise downloads your software
-#           package named AWESOME-PROG. He launches the main executable ---
-#           AWESOME-PROG --- and from his perspective, it just runs.
+#                - Replace .runtime/example.py with your Python program and set
+#                  its name to match the main executable, adding .py (for
+#                  example, "do_awesome_stuff.py").
 #
-#           Internally, however, AWESOME-PROG is actually this shell script,
-#           which verifies that the required Python version libraries exist in
-#           the current environment and, if so, replaces itself with target
-#           Python program via exec, passing along any existing command-line
-#           arguments to it.
+#                - Edit .runtime/wrapper.env to specify the Python version
+#                  and Python libraries you require at runtime.
 #
-#           If verification fails, this wrapper instead asks the user for
-#           permission to install the required Python version/libraries and
-#           calls pythonize to create the right Python environment. If this
-#           succeeds, the wrapper then execs your Python program.
+#             That's it --- you're done: Running this wrapper script will now
+#             resolve any specified Python version/library dependencies as
+#             necessary before launching your Python program.
 #
-#           Using this shell wrapper, you can release Python utilities without
-#           worrying about accommodating all possible versions of Python a user
-#           may have installed --- or in fact worrying if he has Python at all.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Details:    Use this shell-wrapper template to completely abstract Python
+#             version and library dependencies from the end user, eliminate the
+#             need to write egg/wheel specifications for pip installs, and free
+#             yourself from the time-consuming (and often frustrating) task of
+#             demodernizing and otherwise hobbling your code to force compati-
+#             bility with all Pythons 2.6 - 3.x.
+#
+#             This is a shell script that leverages pythonize -- and through it
+#             the Anaconda Python distribution --- to guarantee that your exact
+#             desired Python version and Python packages exist in the current
+#             running shell. More than ensuring your program has what it needs
+#             at runtime, it also allows you to write your code using modern
+#             Python without concerning yourself with what -- if any -- Python
+#             your target environment has installed.
+#
+#             To use this:
+#
+#                 -> Change name of example_package to your package.
+#
+#                 -> Change name of this file to whatever filename you want as
+#                    your main executable (for example, "do_awesome_stuff").
+#
+#                 -> Replace .runtime/example.py with your Python program and
+#                    set its filename to match your main executable, adding .py
+#                    (for example, "do_awesome_stuff.py").
+#
+#                 -> Edit .runtime/wrapper.env to specify the Python version
+#                    and Python libraries you require at runtime.
+#
+#             That's it. Subsequently, the user can call this wrapper script
+#             (which from his perspective is the main program), and everything
+#             just works. The implementation, however, actually does this:
+#
+#                 -> Try to resolve listed dependencies using system Python
+#                    and, if system Python is suitable, exec the Python
+#                    program --- and we're done.
+#
+#                 -> If system Python won't do, try resolving dependencies
+#                    using each installed Anaconda Python environment.
+#
+#                 -> If that doesn't work, run pythonize, which will resolve
+#                    dependencies by running conda to create a new Python
+#                    environment containing what we need, either using an
+#                    existing conda or fetching+installing a fresh Miniconda.
+#
+#                 -> Now we're set: exec the Python program.
+#
+#             For more information about pythonize and making Python wrappers,
+#             run pythonize --help to view its man page. You can also visit the
+#             project page at https://github.com/princebot/pythonize.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
-# Customize the next four variables for the Python program that this wraps:
+# To separate concerns, it's recommended that you specify Python dependencies
+# for pythonize-wrapped programs (or set any custom global variables) in
+# .runtime/wrapper.env rather than here. This also reduces the likelihood of
+# inadvertently introducing bugs in the source --- leave that to me.  ^.^
 #
-#      PROG:         Set by default to use the wrapper script's filename in
-#                    error messages. Change this if you want a different name.
-#      WRAPPED_PROG: Filepath of the Python program this script wraps. By
-#                    default, the wrapper expects its Python program to be in
-#                    <WRAPPER-SCRIPT-DIRECTORY>/.internal/<THIS-FILENAME>.py.
-#                    Change it if your utility is packaged differently.
-#      PY_VERSION:   The required Python version for the wrapped Python script,
-#                    e.g., 2.7. (Using just 2 or 3 without specifying a minor
-#                    version number will match any Python 2.x or 3.x.)
+# If your program package is structured differently and/or does not include
+# .runtime/wrapper.env, you can edit the global variables here instead:
+#
+#      PROG:         Set by default to use this shell wrapper's filename in
+#                    console messages.
+#      WRAPPED_PROG: Filepath of the wrapped Python program (by default, we
+#                    expect .runtime/<program_name>.py)
+#      PY_VERSION:   Python version required for the wrapped Python program,
+#                    e.g., 2.7 (using just "2" or "3" without specifying a
+#                    minor version number will match any Python 2.x or 3.x
+#                    respectively). Python 3 is the default.
 #      PY_PACKAGES:  Bash array of any Python packages outside the standard
 #                    library that the wrapped Python script requires, e.g.,
-#                    PY_PACKAGES=(requests boto3 flask), or PY_PACKAGES=() if
-#                    there are no package dependencies outside the Python
-#                    Standard Library.
+#                    PY_PACKAGES=(requests boto3 flask) --- or PY_PACKAGES=()
+#                    if you're only using Python's standard library.
+#
+# Set the next four variables here only if .runtime/wrapper.env doesn't exist.
 
-PROG=$(basename "${BASH_SOURCE}")
-WRAPPED_PROG=$(dirname "${BASH_SOURCE}")/.internal/${PROG}.py
-PY_VERSION=3
-PY_PACKAGES=(colorama requests)
+if [[ -f $(dirname "${BASH_SOURCE}")/.runtime/wrapper.env ]]; then
+    source "$(dirname "${BASH_SOURCE}")/.runtime/wrapper.env"
+else
+    PROG=$(basename "${BASH_SOURCE}")
+    WRAPPED_PROG=$(dirname "${BASH_SOURCE}")/.runtime/${PROG}.py
+    PY_VERSION=3
+    PY_PACKAGES=(colorama requests)
+fi
 
 
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#
 # All lines below are implementation details and should not require editing.
-#
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+# Set shell options.
 set -o pipefail
 shopt -s extglob
 
@@ -124,6 +175,7 @@ fi
 #      4. __run_wrapped_prog
 #      5. __say
 #      6. __verify_python_deps
+#      7. __watch_pot
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -145,16 +197,22 @@ fi
 __main() {
     # If we have the right Python version/libraries in the current Python or in
     # any installed Anaconda Python environments, run our Python program.
-    if __verify_python_deps; then
+    local tmp=$(
+        mktemp "${PROG}.tmp.XXXXXXXX" || __die "Unable to create temp file")
+    trap "[[ -f ${tmp} ]] && rm -f ${tmp}; trap - EXIT" EXIT
+    __verify_python_deps &
+    __watch_pot
+    local load_python=$(< "${tmp}")
+    if [[ ${load_python} ]]; then
         __run_wrapped_prog "$@"
     fi
     # If we can't resolve dependencies using existing Python environments, try
     # running pythonize to get what we need.
     local __pythonize
-    # If this software package's .pythonize/ directory has a pythonize program,
+    # If this software package's .runtime/ directory has a pythonize program,
     # use it.
-    if [[ -f ${WRAPPED_PROG%/*}/.internal/pythonize ]]; then
-        __pythonize=${WRAPPED_PROG%/*}/.internal/pythonize
+    if [[ -f ${WRAPPED_PROG%/*}/.runtime/pythonize ]]; then
+        __pythonize=${WRAPPED_PROG%/*}/.runtime/pythonize
     # If there's a pythonize available from PATH, use it.
     elif which pythonize &>/dev/null; then
         __pythonize=$(which pythonize)
@@ -196,7 +254,10 @@ __main() {
     fi
     # Check if we now have an Anaconda Python environment that satisfies our
     # Python dependencies. If we do, run the wrapped Python program.
-    if __verify_python_deps; then
+    __verify_python_deps &
+    __watch_pot
+    target_python=$(< "${tmp}")
+    if [[ ${load_python} ]]; then
         __say -a 1 -b 1 \
             "\nSuccessfully installed the required Python dependencies with" \
             "pythonize.\nLaunching main program ...\n "
@@ -261,7 +322,7 @@ __die() {
 # Returns:   Formatted message string.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 __format_python_deps() {
-    # There's no defensible reason for doing this.  <.<
+    # I can't justify this function's existence with a straight face. <.<
     local msg="Python ${PY_VERSION}"
     if ((${#PY_PACKAGES[@]} > 0)); then
         msg+=" "
@@ -297,9 +358,14 @@ __format_python_deps() {
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 __run_wrapped_prog() {
     # Clear the shell options we set in this wrapper.
+    rm -f "${tmp}"
+    trap - EXIT
     set +o pipefail
     shopt -u extglob
-    exec "${WRAPPED_PROG}" "$@"
+    if [[ ${load_python} != "use current python environment" ]]; then
+        eval "${load_python} 2>/dev/null"
+    fi
+    exec python "${WRAPPED_PROG}" "$@"
     # If exec finds the Python program, this shell process is replaced with
     # a new Python process. If for any reason exec itself fails, however, we'll
     # still be in this shell script --- so let's make sure we explicitly exit
@@ -399,23 +465,74 @@ __verify_current_python_deps() {
 __verify_python_deps() {
     # First check the current Python. If it doesn't meet our needs, check any
     # existing conda environments.
-    __verify_current_python_deps && return
+    local retval=1
+    if __verify_current_python_deps; then
+        echo -n "use current python environment" > "${tmp}"
+        retval=0
+    fi
     local d
     local e
     local -a envs
-    for d in ~/{ana,mini}conda{,3}/bin; do
-        [[ -d ${d} ]] || continue
-        source "${d}/activate" root 2>/dev/null || continue
-        __verify_current_python_deps && return
-        envs=($(conda env list | awk '$0 && !/^#/ && $2 !~ /\*/ {print $1}'))
-        for e in "${envs[@]}"; do
-            source activate "$e" 2>/dev/null || continue
-            __verify_current_python_deps && return
+    if ((retval)); then
+        for d in ~/{ana,mini}conda{,3}/bin; do
+            [[ -d ${d} ]] || continue
+            e=root
+            source "${d}/activate" root 2>/dev/null || continue
+            if __verify_current_python_deps; then
+                retval=0
+                break
+            fi
+            envs=($(conda env list \
+                   | awk '$0 && !/^#/ && $2 !~ /\*/ {print $1}'))
+            for e in "${envs[@]}"; do
+                source activate "$e" 2>/dev/null || continue
+                if __verify_current_python_deps; then
+                    retval=0
+                    break 2
+                fi
+            done
         done
-        source "${d}/activate" root 2>/dev/null
-    done
-    return 1
+    fi
+    if ((retval)); then
+        return ${retval}
+    else
+        echo -n "source \"${d}/activate\" \"$e\"" > "${tmp}"
+        return ${retval}
+    fi
 }
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Actions:   Draws a spinner animation.
+# Globals:   Color-escape constants
+# Arguments: None.
+# Returns:   None.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+__watch_pot() {
+    # This is just a fun little function to draw a spinner while waiting on
+    # backgrounded processes. Called immediately after backgrounding a process,
+    # it grabs the PID and continuously redraws the spinner until that process
+    # terminates.
+    local pid=$!
+    local spinner=('-' '\' '|' '/')
+    tput civis
+    # The above command disappears the cursor, so set a trap to get it back
+    # juuust in case the script unexpectedly quits or gets interrupted.
+    # (Otherwise, we'll confuse the hell out of the user.)
+    trap "tput cvvis; trap - RETURN EXIT" RETURN EXIT
+    __say -b 1 -n \
+        "[${1:-checking Python dependencies}]${RESET}${WHITE} ${spinner}"
+    local char
+    while kill -0 ${pid}; do
+        for char in "${spinner[@]}"; do
+            printf "\b${char}"
+            sleep .1
+        done
+    done
+    echo -n "${TO_COL_0}"
+    __say "[${2:-dependency check complete}]${CLR_TO_END}"
+} 2>/dev/null
+
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Begin execution.
