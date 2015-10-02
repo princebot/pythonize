@@ -136,7 +136,7 @@ Just follow these steps to get going:
 
 That's it — you're done. Your Python app is now **pythonized**.
 
-Users will run your application the same way the did before, but as an
+Users will run your application the same way they did before, but as an
 implementation detail, the main executable is now a shell wrapper around your
 Python program.
 
@@ -162,7 +162,7 @@ browse the source: it's extensively commented for that purpose.
 bootstrapping cloud and local boxen when golden images were unavailable or
 nonexistent. I've employed it to package Python apps for sharing
 with other engineers at work and to run Python admin scripts in wild-west
-server environments where sane configuration management yet remains a pipe
+server environments where sane configuration management remains a pipe
 dream.
 
 I made **pythonize** mainly to scratch my own itch — and now I'm
