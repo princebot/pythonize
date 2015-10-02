@@ -395,7 +395,7 @@ pythonize::install_anaconda() {
     # fetch, we first search the raw HTML from Anaconda's download page and
     # grab the download link to the latest installer. Then, we try to download
     # that installer.
-    trap "rm -f -- \"${exe}\"; trap - EXIT" EXIT
+    trap "rm -f -- \"${exe}\"" EXIT
     if [[ ${opt_mini} || ${downgrade} ]]; then
         url=$(${get_url} http://conda.pydata.org/miniconda.html \
               | grep -Eio "https?://.*${__ana_type}.*${sys}.*${arch}\.sh" \
@@ -413,7 +413,6 @@ pythonize::install_anaconda() {
     # Run the Anaconda/Miniconda installer in noninteractive (batch) mode.
     ./${exe} -b
     rm -f -- "${exe}"
-    trap - EXIT
     # Put our newly installed conda utility in PATH so we can use it throughout
     # the rest of this program at need. Note: This will only affect the current
     # process's and its child process's shell environments, not the calling

@@ -199,7 +199,7 @@ __main() {
     # any installed Anaconda Python environments, run our Python program.
     local tmp=$(
         mktemp "${PROG}.tmp.XXXXXXXX" || __die "Unable to create temp file")
-    trap "[[ -f ${tmp} ]] && rm -f ${tmp}; trap - EXIT" EXIT
+    trap "rm -f -- ${tmp}" EXIT
     __verify_python_deps &
     __watch_pot
     local load_python=$(< "${tmp}")
@@ -358,7 +358,7 @@ __format_python_deps() {
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 __run_wrapped_prog() {
     # Clear the shell options we set in this wrapper.
-    rm -f "${tmp}"
+    rm -f -- "${tmp}"
     trap - EXIT
     set +o pipefail
     shopt -u extglob
@@ -519,7 +519,7 @@ __watch_pot() {
     # The above command disappears the cursor, so set a trap to get it back
     # juuust in case the script unexpectedly quits or gets interrupted.
     # (Otherwise, we'll confuse the hell out of the user.)
-    trap "tput cvvis; trap - RETURN EXIT" RETURN EXIT
+    trap "tput cvvis" RETURN EXIT
     __say -b 1 -n \
         "[${1:-checking Python dependencies}]${RESET}${WHITE} ${spinner}"
     local char
@@ -531,6 +531,7 @@ __watch_pot() {
     done
     echo -n "${TO_COL_0}"
     __say "[${2:-dependency check complete}]${CLR_TO_END}"
+    tput cvvis
 } 2>/dev/null
 
 
