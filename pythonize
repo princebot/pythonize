@@ -365,8 +365,8 @@ pythonize::install_anaconda() {
     local get_exe
     # Most *nixes which lack curl have wget -- and vice versa -- so try both.
     if which curl &>/dev/null; then
-        get_url="curl -s"
-        get_exe="curl -o ${exe}"
+        get_url="curl -s -L"
+        get_exe="curl -L -o ${exe}"
     elif which wget &>/dev/null; then
         get_url="wget --quiet -O -"
         get_exe="wget --quiet --show-progress -O ${exe}"
@@ -376,7 +376,6 @@ pythonize::install_anaconda() {
     local sys
     [[ $(uname -s) =~ [Dd]arwin ]] && sys=MacOSX || sys=Linux
     local url
-
     local __ana_dir
     local __ana_type
     # See comments in main() re installing versions of Python other than the
@@ -395,17 +394,21 @@ pythonize::install_anaconda() {
     # fetch, we first search the raw HTML from Anaconda's download page and
     # grab the download link to the latest installer. Then, we try to download
     # that installer.
-    trap "rm -f -- \"${exe}\"" EXIT
+    local regex="https?://[-a-z0-9_./]+${__ana_type}"
     if [[ ${opt_mini} || ${downgrade} ]]; then
-        url=$(${get_url} http://conda.pydata.org/miniconda.html \
-              | grep -Eio "https?://.*${__ana_type}.*${sys}.*${arch}\.sh" \
-              | head -1)
+        get_url+=" http://conda.pydata.org/miniconda.html"
+        regex+="-latest-"
     else
-        url=$(${get_url} http://continuum.io/downloads \
-              | grep -Eio "https?://.*${__ana_type}.*${sys}.*${arch}\.sh" \
-              | head -1)
+        get_url+=" http://continuum.io/downloads"
+        regex+="[-.0-9]+"
     fi
-    if ! ${get_exe} "${url}"; then
+    regex+="${sys}-${arch}\.sh"
+    url=$(${get_url} | grep -Eio "${regex}" | head -1)
+    if [[ ! ${url} ]]; then
+        pythonize::die "Could not find download link for latest ${ana_type}"
+    fi
+    trap "rm -f -- \"${exe}\"" EXIT
+    if ! ${get_exe} ${url}; then
         pythonize::die "Failed to download ${__ana_type} installer"
     fi
     pythonize::say -a 1 -b 1 "\nLaunching ${ana_type} installer.\n "
