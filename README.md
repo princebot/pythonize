@@ -177,7 +177,7 @@ Because of that, I'm working on a 1.0 release (I consider the current version a 
 
 The standout feature of the 1.0 release will be **Windows support.**
 
-Currently, I plan to implement Windows support via a Windows PowerShell program **pythnonize.ps1** that I'll add to this repo. I have a strong \*nix bias but no Windows antipathy: I just genuinely prefer Linux. However, now that I've been studying the PowerShell documentation in depth, I find it to be a surprisingly *amazing* control language, and I'm excited about porting the Bash version to it.
+Currently, I plan to implement Windows support via a Windows PowerShell program **pythonize.ps1** that I'll add to this repo. I have a strong \*nix bias but no Windows antipathy: I just genuinely prefer Linux. However, now that I've been studying the PowerShell documentation in depth, I find it to be a surprisingly *amazing* control language, and I'm excited about porting the Bash version to it.
 
 When complete, Windows users will be able to use a command similar to this as a quickstart from a PowerShell console (provided they already have Git for Windows):
 
