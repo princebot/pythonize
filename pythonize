@@ -187,7 +187,10 @@ pythonize::main() {
     local ana_type
     [[ ${opt_mini} ]] && ana_type="Miniconda" || ana_type="Anaconda"
     [[ ${py_vers} =~ ^3 ]] && ana_type+=3
+    # The directory Anaconda creates during installation will be anaconda2,
+    # anaconda3, miniconda2, or miniconda3
     local ana_dir=~/$(echo -n ${ana_type} | tr A-Z a-z)
+    ! [[ ${py_vers} =~ ^3 ]] && ana_dir+=2
     # The Anaconda installer includes the latest Python 2.x or 3.x in its
     # root (default) environment, so if we want an older version, we'll need
     # to create a new conda environment after installation.
@@ -202,6 +205,7 @@ pythonize::main() {
     if [[ ${downgrade} ]]; then
         ana_root_type=Miniconda${ana_type##*conda}
         ana_root_dir=~/$(echo -n ${ana_root_type} | tr A-Z a-z)
+        ! [[ ${py_vers} =~ ^3 ]] && ana_root_dir+=2
     fi
     if [[ ${opt_wrap} ]]; then
         pythonize::run_wrapper_mode
@@ -1389,4 +1393,5 @@ else
         export -f "${__method}"
     done
 fi
+unset -v __method
     
