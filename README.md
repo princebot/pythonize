@@ -1,7 +1,7 @@
 # pythonize
 <h4>Download, install, and configure Python in one line.</h4>
 
-![pythonize screenshot](http://i.imgur.com/29qmqXw.gif)
+![pythonize screenshot](http://i.imgur.com/R4xOX4B.gif)
 
 
 ## Quickstart
